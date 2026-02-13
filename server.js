@@ -1,5 +1,5 @@
+const bcrypt = require("bcrypt");
 require("dotenv").config();
-
 const express = require("express");
 const bodyParser = require("body-parser");
 const cors = require("cors");
@@ -84,33 +84,51 @@ app.post("/login", async (req, res) => {
   const { username, password } = req.body;
 
   const result = await pool.query(
-    "SELECT * FROM users WHERE username=$1 AND password=$2",
-    [username, password]
+    "SELECT * FROM users WHERE username=$1",
+    [username]
   );
 
   if (result.rows.length === 0)
     return res.json({ success: false });
 
-  res.json({ success: true, user: result.rows[0] });
+  const user = result.rows[0];
+
+  const validPassword = await bcrypt.compare(
+    password,
+    user.password
+  );
+
+  if (!validPassword)
+    return res.json({ success: false });
+
+  res.json({ success: true, user });
 });
+
 
 /* ---------- Register ---------- */
 app.post("/register", async (req, res) => {
   const { name, username, password } = req.body;
 
-  const student = await pool.query(
-    "INSERT INTO students (name,attendance,marks) VALUES ($1,$2,$3) RETURNING id",
-    [name, "0%", "{}"]
-  );
+  try {
+    const studentRes = await pool.query(
+      "INSERT INTO students(name,attendance,marks) VALUES($1,$2,$3) RETURNING id",
+      [name, "0%", "{}"]
+    );
 
-  const studentId = student.rows[0].id;
+    const studentId = studentRes.rows[0].id;
 
-  await pool.query(
-    "INSERT INTO users (username,password,role,studentId) VALUES ($1,$2,$3,$4)",
-    [username, password, "student", studentId]
-  );
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-  res.json({ success: true });
+    await pool.query(
+      "INSERT INTO users(username,password,role,studentId) VALUES($1,$2,$3,$4)",
+      [username, hashedPassword, "student", studentId]
+    );
+
+    res.json({ success: true });
+
+  } catch (err) {
+    res.json({ success: false, message: "User exists" });
+  }
 });
 
 /* ---------- Get Student ---------- */
