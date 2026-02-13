@@ -1,239 +1,226 @@
+require("dotenv").config();
+
 const express = require("express");
 const bodyParser = require("body-parser");
 const cors = require("cors");
-const sqlite3 = require("sqlite3").verbose();
-
-const app = express();
-app.use(cors());
-app.use(bodyParser.json());
-app.use(express.static("../frontend"));
-
-/* ---------- SQLite Setup ---------- */
-
+const { Pool } = require("pg");
 const csv = require("csv-parser");
 const multer = require("multer");
 const fs = require("fs");
 
+const app = express();
+
+app.use(cors());
+app.use(bodyParser.json());
+app.use(express.static("../frontend"));
+
+/* ---------- PostgreSQL Setup ---------- */
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
+});
+
+/* ---------- Create Tables ---------- */
+async function initDB() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS students (
+      id SERIAL PRIMARY KEY,
+      name TEXT,
+      attendance TEXT,
+      marks TEXT
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      username TEXT UNIQUE,
+      password TEXT,
+      role TEXT,
+      studentId INTEGER
+    );
+  `);
+
+  await pool.query(`
+    INSERT INTO users (username,password,role,studentId)
+    VALUES ('admin','admin123','admin',0)
+    ON CONFLICT (username) DO NOTHING;
+  `);
+
+  console.log("PostgreSQL ready");
+}
+initDB();
+
+/* ---------- CSV Upload ---------- */
 const upload = multer({ dest: "uploads/" });
 
-app.post("/uploadStudents", upload.single("file"), (req, res) => {
+app.post("/uploadStudents", upload.single("file"), async (req, res) => {
   const results = [];
 
   fs.createReadStream(req.file.path)
     .pipe(csv())
     .on("data", (data) => results.push(data))
-    .on("end", () => {
-
-      results.forEach(student => {
-
-        db.run(
-          "INSERT INTO students (name, attendance, marks) VALUES (?, ?, ?)",
-          [student.name, "0%", "{}"],
-          function () {
-            const studentId = this.lastID;
-
-            db.run(
-              "INSERT INTO users (username, password, role, studentId) VALUES (?, ?, ?, ?)",
-              [student.username, student.password, "student", studentId]
-            );
-          }
+    .on("end", async () => {
+      for (const s of results) {
+        const student = await pool.query(
+          "INSERT INTO students (name,attendance,marks) VALUES ($1,$2,$3) RETURNING id",
+          [s.name, "0%", "{}"]
         );
 
-      });
+        const studentId = student.rows[0].id;
 
-      res.json({ message: "Students uploaded successfully" });
+        await pool.query(
+          "INSERT INTO users (username,password,role,studentId) VALUES ($1,$2,$3,$4)",
+          [s.username, s.password, "student", studentId]
+        );
+      }
+
+      res.json({ message: "Students uploaded" });
     });
-});
-
-
-const db = new sqlite3.Database("./database.db");
-
-db.serialize(() => {
-  db.run(`CREATE TABLE IF NOT EXISTS students (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT,
-    attendance TEXT,
-    marks TEXT
-  )`);
-
-  db.run(`CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT UNIQUE,
-    password TEXT,
-    role TEXT,
-    studentId INTEGER
-  )`);
 });
 
 /* ---------- Login ---------- */
-app.post("/login", (req, res) => {
+app.post("/login", async (req, res) => {
   const { username, password } = req.body;
 
-  db.get(
-    "SELECT * FROM users WHERE username=? AND password=?",
-    [username, password],
-    (err, user) => {
-      if (!user) return res.json({ success: false });
-      res.json({ success: true, user });
-    }
+  const result = await pool.query(
+    "SELECT * FROM users WHERE username=$1 AND password=$2",
+    [username, password]
   );
+
+  if (result.rows.length === 0)
+    return res.json({ success: false });
+
+  res.json({ success: true, user: result.rows[0] });
 });
 
 /* ---------- Register ---------- */
-app.post("/register", (req, res) => {
+app.post("/register", async (req, res) => {
   const { name, username, password } = req.body;
 
-  db.run(
-    "INSERT INTO students (name, attendance, marks) VALUES (?, ?, ?)",
-    [name, "0%", "{}"],
-    function (err) {
-      if (err) return res.json({ success: false });
-
-      const studentId = this.lastID;
-
-      db.run(
-        "INSERT INTO users (username, password, role, studentId) VALUES (?, ?, ?, ?)",
-        [username, password, "student", studentId],
-        err => {
-          if (err)
-            return res.json({ success: false, message: "User exists" });
-
-          res.json({ success: true });
-        }
-      );
-    }
+  const student = await pool.query(
+    "INSERT INTO students (name,attendance,marks) VALUES ($1,$2,$3) RETURNING id",
+    [name, "0%", "{}"]
   );
+
+  const studentId = student.rows[0].id;
+
+  await pool.query(
+    "INSERT INTO users (username,password,role,studentId) VALUES ($1,$2,$3,$4)",
+    [username, password, "student", studentId]
+  );
+
+  res.json({ success: true });
 });
 
 /* ---------- Get Student ---------- */
-app.get("/student/:id", (req, res) => {
-  db.get(
-    "SELECT * FROM students WHERE id=?",
-    [req.params.id],
-    (err, student) => {
-      if (!student) return res.json(null);
-
-      student.marks = JSON.parse(student.marks || "{}");
-      res.json(student);
-    }
+app.get("/student/:id", async (req, res) => {
+  const result = await pool.query(
+    "SELECT * FROM students WHERE id=$1",
+    [req.params.id]
   );
+
+  if (result.rows.length === 0)
+    return res.json(null);
+
+  const student = result.rows[0];
+  student.marks = JSON.parse(student.marks || "{}");
+
+  res.json(student);
 });
 
 /* ---------- Update Student ---------- */
-app.post("/updateByUsername", (req, res) => {
+app.post("/updateByUsername", async (req, res) => {
   const { username, attendance, subject, marks } = req.body;
 
-  db.get(
-    "SELECT studentId FROM users WHERE username=?",
-    [username],
-    (err, user) => {
-      if (!user) return res.json({ message: "User not found" });
-
-      db.get(
-        "SELECT marks FROM students WHERE id=?",
-        [user.studentId],
-        (err, student) => {
-          let marksObj = JSON.parse(student.marks || "{}");
-
-          if (subject && marks) marksObj[subject] = marks;
-
-          db.run(
-            "UPDATE students SET attendance=?, marks=? WHERE id=?",
-            [attendance, JSON.stringify(marksObj), user.studentId],
-            () => res.json({ message: "Student updated successfully" })
-          );
-        }
-      );
-    }
+  const user = await pool.query(
+    "SELECT studentId FROM users WHERE username=$1",
+    [username]
   );
+
+  if (user.rows.length === 0)
+    return res.json({ message: "User not found" });
+
+  const studentId = user.rows[0].studentid;
+
+  const student = await pool.query(
+    "SELECT marks FROM students WHERE id=$1",
+    [studentId]
+  );
+
+  let marksObj = JSON.parse(student.rows[0].marks || "{}");
+
+  if (subject && marks)
+    marksObj[subject] = marks;
+
+  await pool.query(
+    "UPDATE students SET attendance=$1, marks=$2 WHERE id=$3",
+    [attendance, JSON.stringify(marksObj), studentId]
+  );
+
+  res.json({ message: "Updated successfully" });
 });
 
-
-
-app.post("/createStaff", (req, res) => {
+/* ---------- Create Staff ---------- */
+app.post("/createStaff", async (req, res) => {
   const { username, password } = req.body;
 
-  console.log("Create staff request:", username);
-
-  db.run(
-    "INSERT INTO users (username, password, role, studentId) VALUES (?, ?, ?, ?)",
-    [username, password, "staff", 0],
-    function (err) {
-      if (err) {
-        console.log("Insert error:", err.message);
-        return res.json({ message: "Username already exists" });
-      }
-
-      console.log("Staff inserted successfully");
-      res.json({ message: "Staff account created successfully" });
-    }
+  await pool.query(
+    "INSERT INTO users (username,password,role,studentId) VALUES ($1,$2,$3,$4)",
+    [username, password, "staff", 0]
   );
+
+  res.json({ message: "Staff created" });
 });
 
+/* ---------- Get Students ---------- */
+app.get("/students", async (req, res) => {
+  const result = await pool.query("SELECT * FROM students");
 
+  result.rows.forEach(r => {
+    r.marks = JSON.parse(r.marks || "{}");
+  });
 
-app.get("/students", (req, res) => {
-  db.all("SELECT * FROM students", [], (err, rows) => {
-    if (err) return res.json([]);
+  res.json(result.rows);
+});
 
-    rows.forEach(r => {
-      r.marks = JSON.parse(r.marks || "{}");
-    });
+/* ---------- Admin Stats ---------- */
+app.get("/adminStats", async (req, res) => {
+  const s = await pool.query("SELECT COUNT(*) FROM students");
+  const st = await pool.query(
+    "SELECT COUNT(*) FROM users WHERE role='staff'"
+  );
 
-    res.json(rows);
+  const rows = await pool.query("SELECT attendance FROM students");
+
+  let sum = 0;
+  rows.rows.forEach(r => {
+    sum += parseInt(r.attendance || "0");
+  });
+
+  const avgAttendance =
+    rows.rows.length > 0
+      ? Math.round(sum / rows.rows.length)
+      : 0;
+
+  res.json({
+    totalStudents: s.rows[0].count,
+    totalStaff: st.rows[0].count,
+    avgAttendance
   });
 });
 
-db.run(
-  "INSERT OR IGNORE INTO users (username, password, role, studentId) VALUES (?, ?, ?, ?)",
-  ["admin", "admin123", "admin", 0]
-);
-
-app.get("/adminStats", (req, res) => {
-
-  db.get("SELECT COUNT(*) as totalStudents FROM students", [], (err, s) => {
-
-    db.get(
-      "SELECT COUNT(*) as totalStaff FROM users WHERE role='staff'",
-      [],
-      (err2, st) => {
-
-        db.all("SELECT attendance FROM students", [], (err3, rows) => {
-          let avgAttendance = 0;
-
-          if (rows.length > 0) {
-            let sum = rows.reduce(
-              (a, r) => a + parseInt(r.attendance || "0"),
-              0
-            );
-            avgAttendance = Math.round(sum / rows.length);
-          }
-
-          res.json({
-            totalStudents: s.totalStudents,
-            totalStaff: st.totalStaff,
-            avgAttendance
-          });
-        });
-      }
-    );
-  });
-});
-
-
-app.delete("/deleteStudent/:id", (req, res) => {
+/* ---------- Delete Student ---------- */
+app.delete("/deleteStudent/:id", async (req, res) => {
   const id = req.params.id;
 
-  db.run("DELETE FROM students WHERE id=?", [id], function () {
+  await pool.query("DELETE FROM students WHERE id=$1", [id]);
+  await pool.query("DELETE FROM users WHERE studentId=$1", [id]);
 
-    db.run("DELETE FROM users WHERE studentId=?", [id]);
-
-    res.json({ message: "Student deleted successfully" });
-  });
+  res.json({ message: "Deleted successfully" });
 });
 
-
-/* ---------- Server Start ---------- */
-app.listen(5000, () => {
-  console.log("SQLite Server running on http://localhost:5000");
-});
+/* ---------- Server ---------- */
+app.listen(5000, () =>
+  console.log("Server running on port 5000")
+);
