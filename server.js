@@ -147,6 +147,7 @@ app.get("/debugUsers", async (req, res) => {
 
 
 /* ---------- Register ---------- */
+/* ---------- Register ---------- */
 app.post("/register", async (req, res) => {
   const client = await pool.connect();
 
@@ -155,31 +156,26 @@ app.post("/register", async (req, res) => {
     const username = req.body.username.trim().toLowerCase();
     const password = req.body.password;
 
-    // check existing user
     const check = await client.query(
       "SELECT id FROM users WHERE username=$1",
       [username]
     );
 
     if (check.rows.length > 0) {
-      client.release();
       return res.json({
         success: false,
         message: "User already exists"
       });
     }
 
-    // create student
     const studentRes = await client.query(
       "INSERT INTO students(name,attendance,marks) VALUES($1,$2,$3) RETURNING id",
       [name, "0%", "{}"]
     );
 
     const studentId = studentRes.rows[0].id;
-
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // create user
     await client.query(
       "INSERT INTO users(username,password,role,studentid) VALUES($1,$2,$3,$4)",
       [username, hashedPassword, "student", studentId]
