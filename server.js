@@ -147,19 +147,29 @@ app.get("/debugUsers", async (req, res) => {
 
 
 /* ---------- Register ---------- */
-/* ---------- Register ---------- */
 app.post("/register", async (req, res) => {
+  console.log("Register body:", req.body);
+
   const client = await pool.connect();
 
   try {
-    const name = req.body.name;
-    const username = req.body.username.trim().toLowerCase();
-    const password = req.body.password;
+    const { name, username, password } = req.body;
+
+    if (!name || !username || !password) {
+      console.log("Missing fields");
+      return res.json({ success: false, message: "Missing data" });
+    }
+
+    const uname = username.trim().toLowerCase();
+
+    console.log("Checking user:", uname);
 
     const check = await client.query(
       "SELECT id FROM users WHERE username=$1",
-      [username]
+      [uname]
     );
+
+    console.log("Existing user rows:", check.rows.length);
 
     if (check.rows.length > 0) {
       return res.json({
@@ -168,28 +178,38 @@ app.post("/register", async (req, res) => {
       });
     }
 
+    console.log("Creating student...");
+
     const studentRes = await client.query(
       "INSERT INTO students(name,attendance,marks) VALUES($1,$2,$3) RETURNING id",
       [name, "0%", "{}"]
     );
 
     const studentId = studentRes.rows[0].id;
+
+    console.log("Student created:", studentId);
+
     const hashedPassword = await bcrypt.hash(password, 10);
+
+    console.log("Creating user...");
 
     await client.query(
       "INSERT INTO users(username,password,role,studentid) VALUES($1,$2,$3,$4)",
-      [username, hashedPassword, "student", studentId]
+      [uname, hashedPassword, "student", studentId]
     );
+
+    console.log("Registration success");
 
     res.json({ success: true });
 
   } catch (err) {
-    console.error("Register Error:", err);
+    console.error("REGISTER ERROR:", err);
     res.json({ success: false, message: "Registration failed" });
   } finally {
     client.release();
   }
 });
+
 
 
 
