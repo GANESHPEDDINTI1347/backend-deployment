@@ -23,7 +23,6 @@ const pool = new Pool({
   idleTimeoutMillis: 30000,
 });
 
-
 pool.query("SELECT NOW()")
   .then(() => console.log("✅ Database connected"))
   .catch(err => console.error("❌ DB connection failed:", err));
@@ -69,20 +68,9 @@ async function initDB() {
   }
 }
 
-
-const hashedAdmin = await bcrypt.hash("admin123", 10);
-
-await client.query(
-  `INSERT INTO users (username,password,role,studentid)
-   VALUES ($1,$2,$3,$4)
-   ON CONFLICT (username) DO NOTHING`,
-  ["admin", hashedAdmin, "admin", 0]
-);
-
-
 initDB();
 
-/* ---------- Upload CSV ---------- */
+/* ---------- CSV Upload ---------- */
 const upload = multer({ dest: "uploads/" });
 
 app.post("/uploadStudents", upload.single("file"), async (req, res) => {
@@ -104,7 +92,7 @@ app.post("/uploadStudents", upload.single("file"), async (req, res) => {
 
           await pool.query(
             "INSERT INTO users (username,password,role,studentid) VALUES ($1,$2,$3,$4)",
-            [s.username, hashedPassword, "student", studentId]
+            [s.username.toLowerCase(), hashedPassword, "student", studentId]
           );
         }
 
@@ -128,19 +116,13 @@ app.post("/login", async (req, res) => {
     );
 
     if (!result.rows.length)
-      return res.json({ success: false, msg: "User not found" });
+      return res.json({ success: false });
 
     const user = result.rows[0];
-
-    console.log("Entered password:", password);
-    console.log("Stored hash:", user.password);
-
     const valid = await bcrypt.compare(password, user.password);
 
-    console.log("Password match:", valid);
-
     if (!valid)
-      return res.json({ success: false, msg: "Wrong password" });
+      return res.json({ success: false });
 
     res.json({ success: true, user });
   } catch (err) {
@@ -149,28 +131,13 @@ app.post("/login", async (req, res) => {
   }
 });
 
-
-app.get("/debugUsers", async (req, res) => {
-  const r = await pool.query("SELECT username, password FROM users");
-  res.json(r.rows);
-});
-
-
-/* ---------- Register ---------- */
 /* ---------- Register ---------- */
 app.post("/register", async (req, res) => {
   try {
-    if (!req.body) {
-      return res.json({ success: false, message: "No data received" });
-    }
+    const { name, username, password } = req.body;
 
-    const name = req.body.name;
-    const username = req.body.username;
-    const password = req.body.password;
-
-    if (!name || !username || !password) {
-      return res.json({ success: false, message: "Missing data" });
-    }
+    if (!name || !username || !password)
+      return res.json({ success: false });
 
     const uname = username.trim().toLowerCase();
 
@@ -179,9 +146,8 @@ app.post("/register", async (req, res) => {
       [uname]
     );
 
-    if (check.rows.length > 0) {
+    if (check.rows.length > 0)
       return res.json({ success: false, message: "User exists" });
-    }
 
     const studentRes = await pool.query(
       "INSERT INTO students(name,attendance,marks) VALUES($1,$2,$3) RETURNING id",
@@ -198,12 +164,43 @@ app.post("/register", async (req, res) => {
     res.json({ success: true });
 
   } catch (err) {
-    console.error("REGISTER ERROR:", err);
-    res.status(500).json({ success: false, message: "Server error" });
+    console.error(err);
+    res.status(500).json({ success: false });
   }
 });
 
+/* ---------- Create Staff ---------- */
+app.post("/createStaff", async (req, res) => {
+  try {
+    const { username, password } = req.body;
 
+    if (!username || !password)
+      return res.json({ message: "Missing data" });
+
+    const uname = username.trim().toLowerCase();
+
+    const check = await pool.query(
+      "SELECT id FROM users WHERE username=$1",
+      [uname]
+    );
+
+    if (check.rows.length > 0)
+      return res.json({ message: "User already exists" });
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    await pool.query(
+      "INSERT INTO users (username,password,role,studentid) VALUES ($1,$2,$3,$4)",
+      [uname, hashedPassword, "staff", 0]
+    );
+
+    res.json({ message: "Staff created successfully" });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Failed to create staff" });
+  }
+});
 
 /* ---------- Get Student ---------- */
 app.get("/student/:id", async (req, res) => {
@@ -218,43 +215,6 @@ app.get("/student/:id", async (req, res) => {
   student.marks = JSON.parse(student.marks || "{}");
 
   res.json(student);
-});
-
-/* ---------- Update Student ---------- */
-app.post("/updateByUsername", async (req, res) => {
-  try {
-    const { username, attendance, subject, marks } = req.body;
-
-    const user = await pool.query(
-      "SELECT studentid FROM users WHERE username=$1",
-      [username]
-    );
-
-    if (!user.rows.length)
-      return res.json({ message: "User not found" });
-
-    const studentId = user.rows[0].studentid;
-
-    const student = await pool.query(
-      "SELECT marks FROM students WHERE id=$1",
-      [studentId]
-    );
-
-    let marksObj = JSON.parse(student.rows[0].marks || "{}");
-
-    if (subject && marks !== undefined)
-      marksObj[subject] = marks;
-
-    await pool.query(
-      "UPDATE students SET attendance=$1, marks=$2 WHERE id=$3",
-      [attendance, JSON.stringify(marksObj), studentId]
-    );
-
-    res.json({ message: "Updated successfully" });
-  } catch (err) {
-    console.error(err);
-    res.json({ message: "Update failed" });
-  }
 });
 
 /* ---------- Get Students ---------- */
