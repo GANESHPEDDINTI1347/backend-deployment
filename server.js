@@ -30,8 +30,10 @@ pool.query("SELECT NOW()")
 
 /* ---------- DB Init ---------- */
 async function initDB() {
+  const client = await pool.connect();
+
   try {
-    await pool.query(`
+    await client.query(`
       CREATE TABLE IF NOT EXISTS students (
         id SERIAL PRIMARY KEY,
         name TEXT,
@@ -40,7 +42,7 @@ async function initDB() {
       );
     `);
 
-    await pool.query(`
+    await client.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
         username TEXT UNIQUE,
@@ -52,7 +54,7 @@ async function initDB() {
 
     const hashedAdmin = await bcrypt.hash("admin123", 10);
 
-    await pool.query(
+    await client.query(
       `INSERT INTO users (username,password,role,studentid)
        VALUES ($1,$2,$3,$4)
        ON CONFLICT (username) DO NOTHING`,
@@ -62,8 +64,11 @@ async function initDB() {
     console.log("✅ PostgreSQL ready");
   } catch (err) {
     console.error("DB Init Error:", err);
+  } finally {
+    client.release();
   }
 }
+
 
 initDB();
 
