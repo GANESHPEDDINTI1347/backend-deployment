@@ -104,23 +104,28 @@ app.post("/uploadStudents", upload.single("file"), async (req, res) => {
 /* ---------- Login ---------- */
 app.post("/login", async (req, res) => {
   try {
-    const uname = req.body.username.trim().toLowerCase();
+    const username = req.body.username.trim().toLowerCase();
     const password = req.body.password;
 
     const result = await pool.query(
       "SELECT * FROM users WHERE username=$1",
-      [uname]
+      [username]
     );
 
     if (!result.rows.length)
-      return res.json({ success: false });
+      return res.json({ success: false, msg: "User not found" });
 
     const user = result.rows[0];
 
+    console.log("Entered password:", password);
+    console.log("Stored hash:", user.password);
+
     const valid = await bcrypt.compare(password, user.password);
 
+    console.log("Password match:", valid);
+
     if (!valid)
-      return res.json({ success: false });
+      return res.json({ success: false, msg: "Wrong password" });
 
     res.json({ success: true, user });
   } catch (err) {
@@ -130,10 +135,18 @@ app.post("/login", async (req, res) => {
 });
 
 
+app.get("/debugUsers", async (req, res) => {
+  const r = await pool.query("SELECT username, password FROM users");
+  res.json(r.rows);
+});
+
+
 /* ---------- Register ---------- */
 app.post("/register", async (req, res) => {
   try {
-    const { name, username, password } = req.body;
+    const name = req.body.name;
+    const username = req.body.username.trim().toLowerCase();
+    const password = req.body.password;
 
     const studentRes = await pool.query(
       "INSERT INTO students(name,attendance,marks) VALUES($1,$2,$3) RETURNING id",
@@ -141,6 +154,7 @@ app.post("/register", async (req, res) => {
     );
 
     const studentId = studentRes.rows[0].id;
+
     const hashedPassword = await bcrypt.hash(password, 10);
 
     await pool.query(
@@ -151,9 +165,10 @@ app.post("/register", async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     console.error(err);
-    res.json({ success: false, message: "User exists" });
+    res.json({ success: false });
   }
 });
+
 
 /* ---------- Get Student ---------- */
 app.get("/student/:id", async (req, res) => {
