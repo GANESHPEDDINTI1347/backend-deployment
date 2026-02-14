@@ -70,6 +70,16 @@ async function initDB() {
 }
 
 
+const hashedAdmin = await bcrypt.hash("admin123", 10);
+
+await client.query(
+  `INSERT INTO users (username,password,role,studentid)
+   VALUES ($1,$2,$3,$4)
+   ON CONFLICT (username) DO NOTHING`,
+  ["admin", hashedAdmin, "admin", 0]
+);
+
+
 initDB();
 
 /* ---------- Upload CSV ---------- */
