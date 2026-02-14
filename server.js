@@ -148,12 +148,29 @@ app.get("/debugUsers", async (req, res) => {
 
 /* ---------- Register ---------- */
 app.post("/register", async (req, res) => {
+  const client = await pool.connect();
+
   try {
     const name = req.body.name;
     const username = req.body.username.trim().toLowerCase();
     const password = req.body.password;
 
-    const studentRes = await pool.query(
+    // check existing user
+    const check = await client.query(
+      "SELECT id FROM users WHERE username=$1",
+      [username]
+    );
+
+    if (check.rows.length > 0) {
+      client.release();
+      return res.json({
+        success: false,
+        message: "User already exists"
+      });
+    }
+
+    // create student
+    const studentRes = await client.query(
       "INSERT INTO students(name,attendance,marks) VALUES($1,$2,$3) RETURNING id",
       [name, "0%", "{}"]
     );
@@ -162,17 +179,22 @@ app.post("/register", async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    await pool.query(
+    // create user
+    await client.query(
       "INSERT INTO users(username,password,role,studentid) VALUES($1,$2,$3,$4)",
       [username, hashedPassword, "student", studentId]
     );
 
     res.json({ success: true });
+
   } catch (err) {
-    console.error(err);
-    res.json({ success: false });
+    console.error("Register Error:", err);
+    res.json({ success: false, message: "Registration failed" });
+  } finally {
+    client.release();
   }
 });
+
 
 
 /* ---------- Get Student ---------- */
