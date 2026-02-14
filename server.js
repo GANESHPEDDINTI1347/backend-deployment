@@ -1,5 +1,6 @@
 const bcrypt = require("bcrypt");
 require("dotenv").config();
+
 const express = require("express");
 const bodyParser = require("body-parser");
 const cors = require("cors");
@@ -41,14 +42,19 @@ async function initDB() {
     );
   `);
 
-  await pool.query(`
-    INSERT INTO users (username,password,role,studentId)
-    VALUES ('admin','admin123','admin',0)
-    ON CONFLICT (username) DO NOTHING;
-  `);
+  // create admin with hashed password
+  const hashedAdmin = await bcrypt.hash("admin123", 10);
+
+  await pool.query(
+    `INSERT INTO users (username,password,role,studentId)
+     VALUES ($1,$2,$3,$4)
+     ON CONFLICT (username) DO NOTHING`,
+    ["admin", hashedAdmin, "admin", 0]
+  );
 
   console.log("PostgreSQL ready");
 }
+
 initDB();
 
 /* ---------- CSV Upload ---------- */
@@ -61,6 +67,7 @@ app.post("/uploadStudents", upload.single("file"), async (req, res) => {
     .pipe(csv())
     .on("data", (data) => results.push(data))
     .on("end", async () => {
+
       for (const s of results) {
         const student = await pool.query(
           "INSERT INTO students (name,attendance,marks) VALUES ($1,$2,$3) RETURNING id",
@@ -69,9 +76,11 @@ app.post("/uploadStudents", upload.single("file"), async (req, res) => {
 
         const studentId = student.rows[0].id;
 
+        const hashedPassword = await bcrypt.hash(s.password, 10);
+
         await pool.query(
           "INSERT INTO users (username,password,role,studentId) VALUES ($1,$2,$3,$4)",
-          [s.username, s.password, "student", studentId]
+          [s.username, hashedPassword, "student", studentId]
         );
       }
 
@@ -104,7 +113,6 @@ app.post("/login", async (req, res) => {
   res.json({ success: true, user });
 });
 
-
 /* ---------- Register ---------- */
 app.post("/register", async (req, res) => {
   const { name, username, password } = req.body;
@@ -126,7 +134,7 @@ app.post("/register", async (req, res) => {
 
     res.json({ success: true });
 
-  } catch (err) {
+  } catch {
     res.json({ success: false, message: "User exists" });
   }
 });
@@ -183,9 +191,11 @@ app.post("/updateByUsername", async (req, res) => {
 app.post("/createStaff", async (req, res) => {
   const { username, password } = req.body;
 
+  const hashedPassword = await bcrypt.hash(password, 10);
+
   await pool.query(
     "INSERT INTO users (username,password,role,studentId) VALUES ($1,$2,$3,$4)",
-    [username, password, "staff", 0]
+    [username, hashedPassword, "staff", 0]
   );
 
   res.json({ message: "Staff created" });
