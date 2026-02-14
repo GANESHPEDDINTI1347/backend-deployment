@@ -197,6 +197,7 @@ app.post("/register", async (req, res) => {
 
 
 
+
 /* ---------- Get Student ---------- */
 app.get("/student/:id", async (req, res) => {
   const result = await pool.query(
