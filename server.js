@@ -148,70 +148,41 @@ app.get("/debugUsers", async (req, res) => {
 
 /* ---------- Register ---------- */
 app.post("/register", async (req, res) => {
-  console.log("Register body:", req.body);
-
-  const client = await pool.connect();
-
   try {
     const { name, username, password } = req.body;
 
-    if (!name || !username || !password) {
-      console.log("Missing fields");
+    if (!name || !username || !password)
       return res.json({ success: false, message: "Missing data" });
-    }
 
     const uname = username.trim().toLowerCase();
 
-    console.log("Checking user:", uname);
-
-    const check = await client.query(
+    const check = await pool.query(
       "SELECT id FROM users WHERE username=$1",
       [uname]
     );
 
-    console.log("Existing user rows:", check.rows.length);
+    if (check.rows.length > 0)
+      return res.json({ success: false, message: "User exists" });
 
-    if (check.rows.length > 0) {
-      return res.json({
-        success: false,
-        message: "User already exists"
-      });
-    }
-
-    console.log("Creating student...");
-
-    const studentRes = await client.query(
+    const studentRes = await pool.query(
       "INSERT INTO students(name,attendance,marks) VALUES($1,$2,$3) RETURNING id",
       [name, "0%", "{}"]
     );
 
-    const studentId = studentRes.rows[0].id;
+    const hashed = await bcrypt.hash(password, 10);
 
-    console.log("Student created:", studentId);
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    console.log("Creating user...");
-
-    await client.query(
+    await pool.query(
       "INSERT INTO users(username,password,role,studentid) VALUES($1,$2,$3,$4)",
-      [uname, hashedPassword, "student", studentId]
+      [uname, hashed, "student", studentRes.rows[0].id]
     );
-
-    console.log("Registration success");
 
     res.json({ success: true });
 
   } catch (err) {
     console.error("REGISTER ERROR:", err);
-    res.json({ success: false, message: "Registration failed" });
-  } finally {
-    client.release();
+    res.status(500).json({ success: false, message: "Server error" });
   }
 });
-
-
-
 
 
 /* ---------- Get Student ---------- */
