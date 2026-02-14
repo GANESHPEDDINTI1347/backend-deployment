@@ -104,14 +104,15 @@ app.post("/uploadStudents", upload.single("file"), async (req, res) => {
 /* ---------- Login ---------- */
 app.post("/login", async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const uname = req.body.username.trim().toLowerCase();
+    const password = req.body.password;
 
     const result = await pool.query(
       "SELECT * FROM users WHERE username=$1",
-      [username]
+      [uname]
     );
 
-    if (result.rows.length === 0)
+    if (!result.rows.length)
       return res.json({ success: false });
 
     const user = result.rows[0];
@@ -127,6 +128,7 @@ app.post("/login", async (req, res) => {
     res.json({ success: false });
   }
 });
+
 
 /* ---------- Register ---------- */
 app.post("/register", async (req, res) => {
