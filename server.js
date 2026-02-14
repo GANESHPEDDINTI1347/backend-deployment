@@ -147,12 +147,20 @@ app.get("/debugUsers", async (req, res) => {
 
 
 /* ---------- Register ---------- */
+/* ---------- Register ---------- */
 app.post("/register", async (req, res) => {
   try {
-    const { name, username, password } = req.body;
+    if (!req.body) {
+      return res.json({ success: false, message: "No data received" });
+    }
 
-    if (!name || !username || !password)
+    const name = req.body.name;
+    const username = req.body.username;
+    const password = req.body.password;
+
+    if (!name || !username || !password) {
       return res.json({ success: false, message: "Missing data" });
+    }
 
     const uname = username.trim().toLowerCase();
 
@@ -161,8 +169,9 @@ app.post("/register", async (req, res) => {
       [uname]
     );
 
-    if (check.rows.length > 0)
+    if (check.rows.length > 0) {
       return res.json({ success: false, message: "User exists" });
+    }
 
     const studentRes = await pool.query(
       "INSERT INTO students(name,attendance,marks) VALUES($1,$2,$3) RETURNING id",
@@ -183,6 +192,7 @@ app.post("/register", async (req, res) => {
     res.status(500).json({ success: false, message: "Server error" });
   }
 });
+
 
 
 /* ---------- Get Student ---------- */
