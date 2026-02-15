@@ -70,39 +70,64 @@ async function initDB() {
 
 initDB();
 
+
 /* ---------- CSV Upload ---------- */
 const upload = multer({ dest: "uploads/" });
 
 app.post("/uploadStudents", upload.single("file"), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ message: "No file uploaded" });
+  }
+
   const results = [];
 
   fs.createReadStream(req.file.path)
     .pipe(csv())
-    .on("data", data => results.push(data))
+    .on("data", row => results.push(row))
     .on("end", async () => {
       try {
+        let count = 0;
+
         for (const s of results) {
+          if (!s.name || !s.username || !s.password) continue;
+
+          const name = s.name.trim();
+          const username = s.username.trim().toLowerCase();
+          const password = s.password.trim();
+
+          // skip existing users
+          const exists = await pool.query(
+            "SELECT id FROM users WHERE username=$1",
+            [username]
+          );
+
+          if (exists.rows.length > 0) continue;
+
           const student = await pool.query(
-            "INSERT INTO students (name,attendance,marks) VALUES ($1,$2,$3) RETURNING id",
-            [s.name, "0%", "{}"]
+            "INSERT INTO students(name,attendance,marks) VALUES ($1,$2,$3) RETURNING id",
+            [name, "0%", "{}"]
           );
 
           const studentId = student.rows[0].id;
-          const hashedPassword = await bcrypt.hash(s.password, 10);
+          const hashedPassword = await bcrypt.hash(password, 10);
 
           await pool.query(
-            "INSERT INTO users (username,password,role,studentid) VALUES ($1,$2,$3,$4)",
-            [s.username.toLowerCase(), hashedPassword, "student", studentId]
+            "INSERT INTO users(username,password,role,studentid) VALUES ($1,$2,$3,$4)",
+            [username, hashedPassword, "student", studentId]
           );
+
+          count++;
         }
 
-        res.json({ message: "Students uploaded" });
+        res.json({ message: `${count} students uploaded successfully` });
+
       } catch (err) {
-        console.error(err);
+        console.error("Upload error:", err);
         res.status(500).json({ message: "Upload failed" });
       }
     });
 });
+
 
 /* ---------- Login ---------- */
 app.post("/login", async (req, res) => {
