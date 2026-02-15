@@ -254,6 +254,50 @@ app.get("/adminStats", async (req, res) => {
   });
 });
 
+/* ---------- Update Student ---------- */
+app.post("/updateByUsername", async (req, res) => {
+  try {
+    const { username, attendance, subject, marks } = req.body;
+
+    if (!username)
+      return res.json({ message: "Username required" });
+
+    const uname = username.trim().toLowerCase();
+
+    const user = await pool.query(
+      "SELECT studentid FROM users WHERE username=$1",
+      [uname]
+    );
+
+    if (!user.rows.length)
+      return res.json({ message: "User not found" });
+
+    const studentId = user.rows[0].studentid;
+
+    const student = await pool.query(
+      "SELECT marks FROM students WHERE id=$1",
+      [studentId]
+    );
+
+    let marksObj = JSON.parse(student.rows[0].marks || "{}");
+
+    if (subject && marks)
+      marksObj[subject] = marks;
+
+    await pool.query(
+      "UPDATE students SET attendance=$1, marks=$2 WHERE id=$3",
+      [attendance, JSON.stringify(marksObj), studentId]
+    );
+
+    res.json({ message: "Updated successfully" });
+
+  } catch (err) {
+    console.error("UPDATE ERROR:", err);
+    res.status(500).json({ message: "Update failed" });
+  }
+});
+
+
 /* ---------- Delete Student ---------- */
 app.delete("/deleteStudent/:id", async (req, res) => {
   const id = req.params.id;
