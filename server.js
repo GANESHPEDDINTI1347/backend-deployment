@@ -10,10 +10,11 @@ const { Pool } = require("pg");
 require("dotenv").config();
 
 const app = express();
-
 app.use(cors());
 app.use(bodyParser.json());
-app.use(express.static("../frontend"));
+
+/* ---------- File Upload ---------- */
+const upload = multer({ dest: "uploads/" });
 
 /* ---------- PostgreSQL ---------- */
 const pool = new Pool({
@@ -24,7 +25,7 @@ const pool = new Pool({
 console.log("Connecting DB...");
 pool.query("SELECT NOW()")
   .then(() => console.log("✅ PostgreSQL ready"))
-  .catch(err => console.error(err));
+  .catch(console.error);
 
 /* ---------- DB Init ---------- */
 async function initDB() {
@@ -34,7 +35,15 @@ async function initDB() {
     await client.query(`
       CREATE TABLE IF NOT EXISTS students (
         id SERIAL PRIMARY KEY,
+        username TEXT UNIQUE,
         name TEXT,
+        phone TEXT,
+        email TEXT,
+        parentname TEXT,
+        parentphone TEXT,
+        year TEXT,
+        aadhaar TEXT,
+        address TEXT,
         attendance TEXT,
         marks TEXT DEFAULT '{}'
       );
@@ -77,13 +86,10 @@ app.post("/uploadStudents", upload.single("file"), async (req, res) => {
     .pipe(csv())
     .on("data", row => {
       const cleanRow = {};
-
-      // Trim all column names
       for (let key in row) {
         cleanRow[key.trim().toLowerCase()] =
           row[key] ? row[key].trim() : "";
       }
-
       rows.push(cleanRow);
     })
     .on("end", async () => {
@@ -156,8 +162,6 @@ app.post("/uploadStudents", upload.single("file"), async (req, res) => {
     });
 });
 
-
-
 /* ---------- Login ---------- */
 app.post("/login", async (req, res) => {
   const username = req.body.username.trim().toLowerCase();
@@ -178,35 +182,6 @@ app.post("/login", async (req, res) => {
     return res.json({ success: false });
 
   res.json({ success: true, user });
-});
-
-/* ---------- Register ---------- */
-app.post("/register", async (req, res) => {
-  const { name, username, password } = req.body;
-
-  const uname = username.trim().toLowerCase();
-
-  const exists = await pool.query(
-    "SELECT id FROM users WHERE username=$1",
-    [uname]
-  );
-
-  if (exists.rows.length > 0)
-    return res.json({ success: false });
-
-  const student = await pool.query(
-    "INSERT INTO students(name,attendance,marks) VALUES($1,$2,$3) RETURNING id",
-    [name, "0%", "{}"]
-  );
-
-  const hashed = await bcrypt.hash(password, 10);
-
-  await pool.query(
-    "INSERT INTO users(username,password,role,studentid) VALUES($1,$2,$3,$4)",
-    [uname, hashed, "student", student.rows[0].id]
-  );
-
-  res.json({ success: true });
 });
 
 /* ---------- Students ---------- */
