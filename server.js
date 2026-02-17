@@ -83,12 +83,14 @@ app.post("/uploadStudents", upload.single("file"), async (req, res) => {
   const rows = [];
 
   fs.createReadStream(req.file.path)
-    .pipe(csv())
+    .pipe(csv({
+      mapHeaders: ({ header }) =>
+        header.trim().toLowerCase().replace(/^\uFEFF/, "")
+    }))
     .on("data", row => {
       const cleanRow = {};
       for (let key in row) {
-        cleanRow[key.trim().toLowerCase()] =
-          row[key] ? row[key].trim() : "";
+        cleanRow[key] = row[key]?.trim() || "";
       }
       rows.push(cleanRow);
     })
