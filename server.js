@@ -22,7 +22,6 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
-console.log("Connecting DB...");
 pool.query("SELECT NOW()")
   .then(() => console.log("✅ PostgreSQL ready"))
   .catch(console.error);
@@ -185,22 +184,14 @@ app.post("/login", async (req, res) => {
   res.json({ success: true, user });
 });
 
-/* ---------- Students List ---------- */
-app.get("/students", async (req, res) => {
-  const result = await pool.query("SELECT * FROM students");
-
-  result.rows.forEach(r => {
-    r.marks = JSON.parse(r.marks || "{}");
-  });
-
-  res.json(result.rows);
-});
-
-/* ---------- Single Student ---------- */
+/* ---------- Get Student ---------- */
 app.get("/student/:id", async (req, res) => {
   try {
     const result = await pool.query(
-      "SELECT * FROM students WHERE id=$1",
+      `SELECT id, username, name, phone, email,
+              parentname, parentphone, year,
+              aadhaar, address, attendance, marks
+       FROM students WHERE id=$1`,
       [req.params.id]
     );
 
@@ -218,7 +209,7 @@ app.get("/student/:id", async (req, res) => {
   }
 });
 
-/* ---------- Update Marks & Attendance ---------- */
+/* ---------- Update Marks ---------- */
 app.post("/updateByUsername", async (req, res) => {
   const { username, attendance, subject, marks } = req.body;
 
@@ -250,7 +241,7 @@ app.post("/updateByUsername", async (req, res) => {
   res.json({ message: "Updated successfully" });
 });
 
-/* ---------- Delete Student ---------- */
+/* ---------- Delete ---------- */
 app.delete("/deleteStudent/:id", async (req, res) => {
   const id = req.params.id;
 
