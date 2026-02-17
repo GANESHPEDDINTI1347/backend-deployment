@@ -83,9 +83,27 @@ app.post("/uploadStudents", upload.single("file"), async (req, res) => {
 
   fs.createReadStream(req.file.path)
     .pipe(csv())
-    .on("data", row => students.push(row))
+    .on("data", row => {
+      // Skip empty rows
+      if (!row.username || row.username.trim() === "") return;
+
+      students.push({
+        username: row.username.trim(),
+        name: row.name?.trim() || "",
+        phone: row.phone?.trim() || "",
+        email: row.email?.trim() || "",
+        parentname: row.parentname?.trim() || "",
+        parentphone: row.parentphone?.trim() || "",
+        year: row.year?.trim() || "",
+        aadhaar: row.aadhaar?.trim() || "",
+        address: row.address?.trim() || "",
+        attendance: row.attendance?.trim() || 0
+      });
+    })
     .on("end", async () => {
       try {
+        let count = 0;
+
         for (const s of students) {
           await pool.query(
             `INSERT INTO students
@@ -95,15 +113,15 @@ app.post("/uploadStudents", upload.single("file"), async (req, res) => {
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
              ON CONFLICT (username)
              DO UPDATE SET
-             name=EXCLUDED.name,
-             phone=EXCLUDED.phone,
-             email=EXCLUDED.email,
-             parentname=EXCLUDED.parentname,
-             parentphone=EXCLUDED.parentphone,
-             year=EXCLUDED.year,
-             aadhaar=EXCLUDED.aadhaar,
-             address=EXCLUDED.address,
-             attendance=EXCLUDED.attendance`,
+               name = EXCLUDED.name,
+               phone = EXCLUDED.phone,
+               email = EXCLUDED.email,
+               parentname = EXCLUDED.parentname,
+               parentphone = EXCLUDED.parentphone,
+               year = EXCLUDED.year,
+               aadhaar = EXCLUDED.aadhaar,
+               address = EXCLUDED.address,
+               attendance = EXCLUDED.attendance`,
             [
               s.username,
               s.name,
@@ -117,19 +135,20 @@ app.post("/uploadStudents", upload.single("file"), async (req, res) => {
               s.attendance
             ]
           );
+
+          count++;
         }
 
-        res.json({ message: "Students uploaded successfully" });
+        res.json({
+          message: `${count} students uploaded successfully`
+        });
 
       } catch (err) {
-        console.log(err);
+        console.log("Upload error:", err);
         res.status(500).json({ message: "Upload failed" });
       }
 
-      fs.unlinkSync(req.file.path);
-    });
-});
-
+      fs.unlinkSync(req.file
 
 app.get("/student/:id", async (req, res) => {
   try {
@@ -138,19 +157,14 @@ app.get("/student/:id", async (req, res) => {
       [req.params.id]
     );
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({
-        message: "Student not found"
-      });
-    }
+    if (result.rows.length === 0)
+      return res.status(404).json({ message: "Student not found" });
 
     res.json(result.rows[0]);
 
   } catch (err) {
-    console.error("Student fetch error:", err);
-    res.status(500).json({
-      message: "Server error"
-    });
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
   }
 });
 
