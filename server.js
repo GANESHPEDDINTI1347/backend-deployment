@@ -67,8 +67,6 @@ async function initDB() {
 initDB();
 
 /* ---------- CSV Upload ---------- */
-const upload = multer({ dest: "uploads/" });
-
 app.post("/uploadStudents", upload.single("file"), async (req, res) => {
   if (!req.file)
     return res.status(400).json({ message: "No file uploaded" });
@@ -83,36 +81,75 @@ app.post("/uploadStudents", upload.single("file"), async (req, res) => {
         let count = 0;
 
         for (const s of rows) {
-          if (!s.name || !s.username || !s.password) continue;
+          if (!s.username || !s.name) continue;
 
-          const name = s.name.trim();
           const username = s.username.trim().toLowerCase();
-          const password = s.password.trim();
+          const name = s.name.trim();
 
+          const phone = s.phone || "";
+          const email = s.email || "";
+          const parentname = s.parentname || "";
+          const parentphone = s.parentphone || "";
+          const year = s.year || "";
+          const aadhaar = s.aadhaar || "";
+          const address = s.address || "";
+          const attendance = s.attendance || "0%";
+
+          // insert or update student
+          const student = await pool.query(
+            `INSERT INTO students
+            (username,name,phone,email,parentname,parentphone,
+             year,aadhaar,address,attendance,marks)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'{}')
+             ON CONFLICT(username)
+             DO UPDATE SET
+               name=EXCLUDED.name,
+               phone=EXCLUDED.phone,
+               email=EXCLUDED.email,
+               parentname=EXCLUDED.parentname,
+               parentphone=EXCLUDED.parentphone,
+               year=EXCLUDED.year,
+               aadhaar=EXCLUDED.aadhaar,
+               address=EXCLUDED.address,
+               attendance=EXCLUDED.attendance
+             RETURNING id`,
+            [
+              username,
+              name,
+              phone,
+              email,
+              parentname,
+              parentphone,
+              year,
+              aadhaar,
+              address,
+              attendance
+            ]
+          );
+
+          const studentId = student.rows[0].id;
+
+          // create login if not exists
           const exists = await pool.query(
             "SELECT id FROM users WHERE username=$1",
             [username]
           );
 
-          if (exists.rows.length > 0) continue;
+          if (!exists.rows.length) {
+            const hashed = await bcrypt.hash("123456", 10);
 
-          const student = await pool.query(
-            "INSERT INTO students(name,attendance,marks) VALUES($1,$2,$3) RETURNING id",
-            [name, "0%", "{}"]
-          );
-
-          const studentId = student.rows[0].id;
-          const hashed = await bcrypt.hash(password, 10);
-
-          await pool.query(
-            "INSERT INTO users(username,password,role,studentid) VALUES($1,$2,$3,$4)",
-            [username, hashed, "student", studentId]
-          );
+            await pool.query(
+              "INSERT INTO users(username,password,role,studentid) VALUES($1,$2,$3,$4)",
+              [username, hashed, "student", studentId]
+            );
+          }
 
           count++;
         }
 
-        res.json({ message: `${count} students uploaded successfully` });
+        res.json({
+          message: `${count} students uploaded successfully`
+        });
 
       } catch (err) {
         console.error(err);
@@ -122,6 +159,7 @@ app.post("/uploadStudents", upload.single("file"), async (req, res) => {
       fs.unlinkSync(req.file.path);
     });
 });
+
 
 /* ---------- Login ---------- */
 app.post("/login", async (req, res) => {
