@@ -71,6 +71,90 @@ async function initDB() {
 initDB();
 
 
+
+const multer = require("multer");
+const csv = require("csv-parser");
+const fs = require("fs");
+
+const upload = multer({ dest: "uploads/" });
+
+app.post("/uploadStudents", upload.single("file"), async (req, res) => {
+  const students = [];
+
+  fs.createReadStream(req.file.path)
+    .pipe(csv())
+    .on("data", row => students.push(row))
+    .on("end", async () => {
+      try {
+        for (const s of students) {
+          await pool.query(
+            `INSERT INTO students
+            (username, name, phone, email,
+             parentname, parentphone,
+             year, aadhaar, address, attendance)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+             ON CONFLICT (username)
+             DO UPDATE SET
+             name=EXCLUDED.name,
+             phone=EXCLUDED.phone,
+             email=EXCLUDED.email,
+             parentname=EXCLUDED.parentname,
+             parentphone=EXCLUDED.parentphone,
+             year=EXCLUDED.year,
+             aadhaar=EXCLUDED.aadhaar,
+             address=EXCLUDED.address,
+             attendance=EXCLUDED.attendance`,
+            [
+              s.username,
+              s.name,
+              s.phone,
+              s.email,
+              s.parentname,
+              s.parentphone,
+              s.year,
+              s.aadhaar,
+              s.address,
+              s.attendance
+            ]
+          );
+        }
+
+        res.json({ message: "Students uploaded successfully" });
+
+      } catch (err) {
+        console.log(err);
+        res.status(500).json({ message: "Upload failed" });
+      }
+
+      fs.unlinkSync(req.file.path);
+    });
+});
+
+
+app.get("/student/:id", async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT * FROM students WHERE id = $1",
+      [req.params.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        message: "Student not found"
+      });
+    }
+
+    res.json(result.rows[0]);
+
+  } catch (err) {
+    console.error("Student fetch error:", err);
+    res.status(500).json({
+      message: "Server error"
+    });
+  }
+});
+
+
 /* ---------- CSV Upload ---------- */
 const upload = multer({ dest: "uploads/" });
 
