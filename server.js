@@ -89,9 +89,8 @@ app.post("/uploadStudents", upload.single("file"), async (req, res) => {
     }))
     .on("data", row => {
       const cleanRow = {};
-      for (let key in row) {
+      for (let key in row)
         cleanRow[key] = row[key]?.trim() || "";
-      }
       rows.push(cleanRow);
     })
     .on("end", async () => {
@@ -128,7 +127,7 @@ app.post("/uploadStudents", upload.single("file"), async (req, res) => {
               s.year,
               s.aadhaar,
               s.address,
-              s.attendance || "0%"
+              s.attendance || "0"
             ]
           );
 
@@ -186,7 +185,7 @@ app.post("/login", async (req, res) => {
   res.json({ success: true, user });
 });
 
-/* ---------- Students ---------- */
+/* ---------- Students List ---------- */
 app.get("/students", async (req, res) => {
   const result = await pool.query("SELECT * FROM students");
 
@@ -197,22 +196,29 @@ app.get("/students", async (req, res) => {
   res.json(result.rows);
 });
 
+/* ---------- Single Student ---------- */
 app.get("/student/:id", async (req, res) => {
-  const result = await pool.query(
-    "SELECT * FROM students WHERE id=$1",
-    [req.params.id]
-  );
+  try {
+    const result = await pool.query(
+      "SELECT * FROM students WHERE id=$1",
+      [req.params.id]
+    );
 
-  if (!result.rows.length)
-    return res.json(null);
+    if (!result.rows.length)
+      return res.json(null);
 
-  const student = result.rows[0];
-  student.marks = JSON.parse(student.marks || "{}");
+    const student = result.rows[0];
+    student.marks = JSON.parse(student.marks || "{}");
 
-  res.json(student);
+    res.json(student);
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
 });
 
-/* ---------- Update ---------- */
+/* ---------- Update Marks & Attendance ---------- */
 app.post("/updateByUsername", async (req, res) => {
   const { username, attendance, subject, marks } = req.body;
 
@@ -244,7 +250,7 @@ app.post("/updateByUsername", async (req, res) => {
   res.json({ message: "Updated successfully" });
 });
 
-/* ---------- Delete ---------- */
+/* ---------- Delete Student ---------- */
 app.delete("/deleteStudent/:id", async (req, res) => {
   const id = req.params.id;
 
