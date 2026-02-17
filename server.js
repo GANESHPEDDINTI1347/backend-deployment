@@ -75,7 +75,17 @@ app.post("/uploadStudents", upload.single("file"), async (req, res) => {
 
   fs.createReadStream(req.file.path)
     .pipe(csv())
-    .on("data", row => rows.push(row))
+    .on("data", row => {
+      const cleanRow = {};
+
+      // Trim all column names
+      for (let key in row) {
+        cleanRow[key.trim().toLowerCase()] =
+          row[key] ? row[key].trim() : "";
+      }
+
+      rows.push(cleanRow);
+    })
     .on("end", async () => {
       try {
         let count = 0;
@@ -83,19 +93,6 @@ app.post("/uploadStudents", upload.single("file"), async (req, res) => {
         for (const s of rows) {
           if (!s.username || !s.name) continue;
 
-          const username = s.username.trim().toLowerCase();
-          const name = s.name.trim();
-
-          const phone = s.phone || "";
-          const email = s.email || "";
-          const parentname = s.parentname || "";
-          const parentphone = s.parentphone || "";
-          const year = s.year || "";
-          const aadhaar = s.aadhaar || "";
-          const address = s.address || "";
-          const attendance = s.attendance || "0%";
-
-          // insert or update student
           const student = await pool.query(
             `INSERT INTO students
             (username,name,phone,email,parentname,parentphone,
@@ -114,25 +111,24 @@ app.post("/uploadStudents", upload.single("file"), async (req, res) => {
                attendance=EXCLUDED.attendance
              RETURNING id`,
             [
-              username,
-              name,
-              phone,
-              email,
-              parentname,
-              parentphone,
-              year,
-              aadhaar,
-              address,
-              attendance
+              s.username.toLowerCase(),
+              s.name,
+              s.phone,
+              s.email,
+              s.parentname,
+              s.parentphone,
+              s.year,
+              s.aadhaar,
+              s.address,
+              s.attendance || "0%"
             ]
           );
 
           const studentId = student.rows[0].id;
 
-          // create login if not exists
           const exists = await pool.query(
             "SELECT id FROM users WHERE username=$1",
-            [username]
+            [s.username.toLowerCase()]
           );
 
           if (!exists.rows.length) {
@@ -140,7 +136,7 @@ app.post("/uploadStudents", upload.single("file"), async (req, res) => {
 
             await pool.query(
               "INSERT INTO users(username,password,role,studentid) VALUES($1,$2,$3,$4)",
-              [username, hashed, "student", studentId]
+              [s.username.toLowerCase(), hashed, "student", studentId]
             );
           }
 
@@ -159,6 +155,7 @@ app.post("/uploadStudents", upload.single("file"), async (req, res) => {
       fs.unlinkSync(req.file.path);
     });
 });
+
 
 
 /* ---------- Login ---------- */
