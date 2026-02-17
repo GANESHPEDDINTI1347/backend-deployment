@@ -188,10 +188,20 @@ app.post("/login", async (req, res) => {
 app.get("/student/:id", async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, username, name, phone, email,
-              parentname, parentphone, year,
-              aadhaar, address, attendance, marks
-       FROM students WHERE id=$1`,
+      `SELECT id,
+              username,
+              name,
+              phone,
+              email,
+              parentname,
+              parentphone,
+              year,
+              aadhaar,
+              address,
+              attendance,
+              marks
+       FROM students
+       WHERE id = $1`,
       [req.params.id]
     );
 
@@ -199,12 +209,15 @@ app.get("/student/:id", async (req, res) => {
       return res.json(null);
 
     const student = result.rows[0];
-    student.marks = JSON.parse(student.marks || "{}");
+
+    student.marks = student.marks
+      ? JSON.parse(student.marks)
+      : {};
 
     res.json(student);
 
   } catch (err) {
-    console.error(err);
+    console.log(err);
     res.status(500).json({ message: "Server error" });
   }
 });
