@@ -22,15 +22,18 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
+/* ---------- DB Connection Test (FIXED) ---------- */
 pool.query("SELECT NOW()")
   .then(() => console.log("✅ PostgreSQL ready"))
-  .catch(console.error);
+  .catch(err => {
+    console.error("❌ DB ERROR:", err.message);
+  });
 
 /* ---------- DB Init ---------- */
 async function initDB() {
-  const client = await pool.connect();
-
   try {
+    const client = await pool.connect();
+
     await client.query(`
       CREATE TABLE IF NOT EXISTS students (
         id SERIAL PRIMARY KEY,
@@ -67,8 +70,10 @@ async function initDB() {
       ["admin", hashedAdmin, "admin", 0]
     );
 
-  } finally {
     client.release();
+
+  } catch (err) {
+    console.error("❌ DB INIT ERROR:", err.message);
   }
 }
 
@@ -184,87 +189,8 @@ app.post("/login", async (req, res) => {
   res.json({ success: true, user });
 });
 
-/* ---------- Get Student ---------- */
-app.get("/student/:id", async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT id,
-              username,
-              name,
-              phone,
-              email,
-              parentname,
-              parentphone,
-              year,
-              aadhaar,
-              address,
-              attendance,
-              marks
-       FROM students
-       WHERE id = $1`,
-      [req.params.id]
-    );
-
-    if (!result.rows.length)
-      return res.json(null);
-
-    const student = result.rows[0];
-
-    student.marks = student.marks
-      ? JSON.parse(student.marks)
-      : {};
-
-    res.json(student);
-
-  } catch (err) {
-    console.log(err);
-    res.status(500).json({ message: "Server error" });
-  }
-});
-
-/* ---------- Update Marks ---------- */
-app.post("/updateByUsername", async (req, res) => {
-  const { username, attendance, subject, marks } = req.body;
-
-  const user = await pool.query(
-    "SELECT studentid FROM users WHERE username=$1",
-    [username.trim().toLowerCase()]
-  );
-
-  if (!user.rows.length)
-    return res.json({ message: "User not found" });
-
-  const studentId = user.rows[0].studentid;
-
-  const student = await pool.query(
-    "SELECT marks FROM students WHERE id=$1",
-    [studentId]
-  );
-
-  let marksObj = JSON.parse(student.rows[0].marks || "{}");
-
-  if (subject && marks)
-    marksObj[subject] = marks;
-
-  await pool.query(
-    "UPDATE students SET attendance=$1, marks=$2 WHERE id=$3",
-    [attendance, JSON.stringify(marksObj), studentId]
-  );
-
-  res.json({ message: "Updated successfully" });
-});
-
-/* ---------- Delete ---------- */
-app.delete("/deleteStudent/:id", async (req, res) => {
-  const id = req.params.id;
-
-  await pool.query("DELETE FROM students WHERE id=$1", [id]);
-  await pool.query("DELETE FROM users WHERE studentid=$1", [id]);
-
-  res.json({ message: "Deleted successfully" });
-});
-
 /* ---------- Server ---------- */
-app.listen(5000, () =>
-  console.log("🚀 Server running on port 5000")
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () =>
+  console.log(`🚀 Server running on port ${PORT}`)
 );
