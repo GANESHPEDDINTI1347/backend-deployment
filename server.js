@@ -189,6 +189,40 @@ app.post("/login", async (req, res) => {
   res.json({ success: true, user });
 });
 
+
+
+app.post("/register", async (req, res) => {
+  try {
+    const { name, username, password } = req.body;
+
+    if (!name || !username || !password) {
+      return res.json({ success: false, message: "Missing fields" });
+    }
+
+    const check = await pool.query(
+      "SELECT * FROM users WHERE username=$1",
+      [username.toLowerCase()]
+    );
+
+    if (check.rows.length > 0) {
+      return res.json({ success: false, message: "User already exists" });
+    }
+
+    const hashed = await bcrypt.hash(password, 10);
+
+    await pool.query(
+      "INSERT INTO users(username,password,role,studentid) VALUES($1,$2,$3,$4)",
+      [username.toLowerCase(), hashed, "student", null]
+    );
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("REGISTER ERROR:", err.message);
+    res.json({ success: false, message: "Server error" });
+  }
+});
+
 /* ---------- Server ---------- */
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () =>
