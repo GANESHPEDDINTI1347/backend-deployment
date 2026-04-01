@@ -39,13 +39,6 @@ async function initDB() {
         id SERIAL PRIMARY KEY,
         username TEXT UNIQUE,
         name TEXT,
-        phone TEXT,
-        email TEXT,
-        parentname TEXT,
-        parentphone TEXT,
-        year TEXT,
-        aadhaar TEXT,
-        address TEXT,
         attendance TEXT,
         marks TEXT DEFAULT '{}'
       );
@@ -103,7 +96,7 @@ app.post("/login", async (req, res) => {
     res.json({ success: true, user });
 
   } catch (err) {
-    console.error(err);
+    console.error("LOGIN ERROR:", err);
     res.status(500).json({ success: false });
   }
 });
@@ -132,7 +125,7 @@ app.post("/register", async (req, res) => {
     res.json({ success: true });
 
   } catch (err) {
-    console.error(err);
+    console.error("REGISTER ERROR:", err);
     res.json({ success: false });
   }
 });
@@ -164,6 +157,63 @@ app.post("/createStaff", async (req, res) => {
     console.error(err);
     res.json({ message: "Error creating staff" });
   }
+});
+
+/* ---------- CSV UPLOAD (YOUR FORMAT) ---------- */
+app.post("/uploadStudentsSimple", upload.single("file"), async (req, res) => {
+  if (!req.file)
+    return res.status(400).json({ message: "No file uploaded" });
+
+  const rows = [];
+
+  fs.createReadStream(req.file.path)
+    .pipe(csv({
+      mapHeaders: ({ header }) =>
+        header.trim().toLowerCase()
+    }))
+    .on("data", row => rows.push(row))
+    .on("end", async () => {
+      try {
+        let count = 0;
+
+        for (const s of rows) {
+          if (!s.name || !s.username || !s.password) continue;
+
+          const username = s.username.toLowerCase();
+
+          const studentRes = await pool.query(
+            `INSERT INTO students (username, name, attendance, marks)
+             VALUES ($1, $2, '0', '{}')
+             ON CONFLICT(username)
+             DO UPDATE SET name=EXCLUDED.name
+             RETURNING id`,
+            [username, s.name]
+          );
+
+          const studentId = studentRes.rows[0].id;
+
+          const hashedPassword = await bcrypt.hash(s.password, 10);
+
+          await pool.query(
+            `INSERT INTO users(username,password,role,studentid)
+             VALUES($1,$2,$3,$4)
+             ON CONFLICT(username)
+             DO UPDATE SET password=EXCLUDED.password`,
+            [username, hashedPassword, "student", studentId]
+          );
+
+          count++;
+        }
+
+        res.json({ message: `${count} students uploaded successfully` });
+
+      } catch (err) {
+        console.error("CSV ERROR:", err);
+        res.status(500).json({ message: "Upload failed" });
+      }
+
+      fs.unlinkSync(req.file.path);
+    });
 });
 
 /* ---------- UPDATE STUDENT ---------- */
