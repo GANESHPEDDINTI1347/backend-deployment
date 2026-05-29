@@ -106,27 +106,54 @@ app.post("/register", async (req, res) => {
   try {
     const { name, username, password } = req.body;
 
+    const uname = username.trim().toLowerCase();
+
     const check = await pool.query(
       "SELECT * FROM users WHERE username=$1",
-      [username.toLowerCase()]
+      [uname]
     );
 
     if (check.rows.length > 0) {
-      return res.json({ success: false, message: "User exists" });
+      return res.json({
+        success: false,
+        message: "User already exists"
+      });
     }
 
-    const hashed = await bcrypt.hash(password, 10);
-
-    await pool.query(
-      "INSERT INTO users(username,password,role,studentid) VALUES($1,$2,$3,$4)",
-      [username.toLowerCase(), hashed, "student", null]
+    // Create student record
+    const studentRes = await pool.query(
+      `INSERT INTO students
+       (username,name,attendance,marks)
+       VALUES($1,$2,$3,$4)
+       RETURNING id`,
+      [uname, name, "0", "{}"]
     );
 
-    res.json({ success: true });
+    const studentId = studentRes.rows[0].id;
+
+    const hashedPassword =
+      await bcrypt.hash(password, 10);
+
+    // Create user account
+    await pool.query(
+      `INSERT INTO users
+       (username,password,role,studentid)
+       VALUES($1,$2,$3,$4)`,
+      [uname, hashedPassword, "student", studentId]
+    );
+
+    res.json({
+      success: true,
+      message: "Registration successful"
+    });
 
   } catch (err) {
     console.error("REGISTER ERROR:", err);
-    res.json({ success: false });
+
+    res.json({
+      success: false,
+      message: err.message
+    });
   }
 });
 
